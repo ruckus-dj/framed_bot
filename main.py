@@ -108,6 +108,8 @@ async def generate_stats_text(framed_stats: Stats, episode_stats: Stats):
         else:
             text += f'но ни разу ничего не отгадал.'
 
+    return text
+
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = await User.get(update.effective_user.id)
