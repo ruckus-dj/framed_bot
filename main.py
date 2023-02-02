@@ -2,7 +2,7 @@ import asyncio
 import logging
 import re
 
-from telegram import Update, User as TgUser
+from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -41,6 +41,14 @@ class EpisodeFilter(MessageFilter):
 
 
 EPISODE_FILTER = EpisodeFilter(name='EpisodeFilter')
+
+
+def pluralize(count: int, first_form: str, second_form: str, third_form: str):
+    if count % 10 == 1 and count != 11:
+        return first_form
+    if count % 10 in (2, 3, 4) and count not in (12, 13, 14):
+        return second_form
+    return third_form
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -88,10 +96,13 @@ async def new_episode_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def generate_stats_text(framed_stats: Stats, episode_stats: Stats):
     text = f'Ты участвовал в '
     if framed_stats.rounds_count:
-        text += f'{framed_stats.rounds_count} раундах framed.wtf, ' \
+        text += f'{framed_stats.rounds_count} ' \
+                f'{pluralize(framed_stats.rounds_count, "раунде", "раундах", "раундах")} ' \
+                f'framed.wtf, ' \
 
         if framed_stats.rounds_won_count:
-            text += f'отгадал {framed_stats.rounds_won_count} фильмов ' \
+            text += f'отгадал {framed_stats.rounds_won_count} ' \
+                    f'{pluralize(framed_stats.rounds_won_count, "фильм", "фильма", "фильмов")} ' \
                     f'в среднем с {framed_stats.average_frame} кадра.'
         else:
             text += f'но ни разу ничего не отгадал.'
@@ -100,10 +111,13 @@ async def generate_stats_text(framed_stats: Stats, episode_stats: Stats):
         text += '\nА ещё в '
 
     if episode_stats.rounds_count:
-        text += f'{episode_stats.rounds_count} раундах episode.wtf, '
+        text += f'{episode_stats.rounds_count} ' \
+                f'{pluralize(framed_stats.rounds_count, "раунде", "раундах", "раундах")} ' \
+                f'episode.wtf, '
 
         if episode_stats.rounds_won_count:
-            text += f'отгадал {episode_stats.rounds_won_count} сериалов ' \
+            text += f'отгадал {episode_stats.rounds_won_count} ' \
+                    f'{pluralize(framed_stats.rounds_won_count, "сериал", "сериала", "сериалов")} ' \
                     f'в среднем с {episode_stats.average_frame} кадра.'
         else:
             text += f'но ни разу ничего не отгадал.'
