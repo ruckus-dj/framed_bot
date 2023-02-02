@@ -15,7 +15,8 @@ class User(Base):
     full_name: Mapped[str]
     username: Mapped[str]
 
-    framed_results: Mapped[list['FramedResult']] = relationship(back_populates='user')
+    framed_results: Mapped[list['FramedResult']] = relationship(back_populates='user', lazy="joined")
+    episode_results: Mapped[list['EpisodeResult']] = relationship(back_populates='user', lazy="joined")
 
     @staticmethod
     async def update_from_tg_user(tg_user: TgUser):
