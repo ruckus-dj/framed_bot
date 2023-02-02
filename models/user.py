@@ -33,4 +33,5 @@ class User(Base):
     @staticmethod
     async def get(user_id: int):
         async with AsyncScopedSession() as session:
-            return await session.execute(Select(User).filter(User.id == user_id)).scalars().first()
+            result = await session.execute(Select(User).filter(User.id == user_id))
+            return result.scalars().first()
