@@ -112,12 +112,12 @@ async def generate_stats_text(framed_stats: Stats, episode_stats: Stats):
 
     if episode_stats.rounds_count:
         text += f'{episode_stats.rounds_count} ' \
-                f'{pluralize(framed_stats.rounds_count, "раунде", "раундах", "раундах")} ' \
+                f'{pluralize(episode_stats.rounds_count, "раунде", "раундах", "раундах")} ' \
                 f'episode.wtf, '
 
         if episode_stats.rounds_won_count:
             text += f'отгадал {episode_stats.rounds_won_count} ' \
-                    f'{pluralize(framed_stats.rounds_won_count, "сериал", "сериала", "сериалов")} ' \
+                    f'{pluralize(episode_stats.rounds_won_count, "сериал", "сериала", "сериалов")} ' \
                     f'в среднем с {episode_stats.average_frame} кадра.'
         else:
             text += f'но ни разу ничего не отгадал.'
