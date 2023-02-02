@@ -123,9 +123,11 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     framed_stats = await count_stats(user.framed_results)
     episode_stats = await count_stats(user.episode_results)
 
+    text = await generate_stats_text(framed_stats, episode_stats)
+
     await context.bot.send_message(
         chat_id=update.effective_chat.id,
-        text=generate_stats_text(framed_stats, episode_stats),
+        text=text,
         reply_to_message_id=update.message.id
     )
 
