@@ -28,3 +28,8 @@ class User(Base):
             user.username = tg_user.username
             session.add(user)
             await session.commit()
+
+    @staticmethod
+    async def get(user_id: int):
+        async with AsyncScopedSession() as session:
+            return await session.execute(Select(User).filter(User.id == user_id)).scalars().first()

@@ -61,6 +61,30 @@ async def new_framed_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user = await User.get(update.effective_user.id)
+
+    if not user:
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text="Я тебя не знаю",
+            reply_to_message_id=update.message.id
+        )
+        return
+
+    rounds_count = len(user.framed_results)
+    rounds_won: list[FramedResult] = list(filter(lambda framed_result: framed_result.won, user.framed_results))
+    rounds_won_count = len(rounds_won)
+    average_frame = sum([framed_result.win_frame for framed_result in rounds_won]) / rounds_won_count
+
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=f"Ты участвовал в {rounds_count} раундах, отгадал {rounds_won} фильмов в среднем с {average_frame} кадра",
+        reply_to_message_id=update.message.id
+    )
+    return
+
+
 if __name__ == '__main__':
     application = ApplicationBuilder().token(BOT_TOKEN).rate_limiter(AIORateLimiter()).build()
 
@@ -73,5 +97,8 @@ if __name__ == '__main__':
 
     framed_data_handler = MessageHandler(filters.ChatType.GROUPS & FRAMED_FILTER, new_framed_data)
     application.add_handler(framed_data_handler)
+
+    stats_handler = CommandHandler('stats', stats)
+    application.add_handler(stats_handler)
 
     application.run_polling()
