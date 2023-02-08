@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from sqlalchemy import Select
-from sqlalchemy.orm import Mapped, relationship
+from sqlalchemy.orm import Mapped
 from sqlalchemy.orm import mapped_column
+from sqlalchemy.types import BigInteger
 from telegram import Chat as TgChat
 
 from .db import Base, AsyncScopedSession
@@ -11,7 +12,7 @@ from .db import Base, AsyncScopedSession
 class Group(Base):
     __tablename__ = "group"
 
-    id: Mapped[int] = mapped_column(primary_key=True)
+    id: Mapped[int] = mapped_column('id', BigInteger, primary_key=True)
     title: Mapped[str]
 
     @staticmethod
