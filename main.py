@@ -153,10 +153,24 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = await generate_stats_text(framed_stats, episode_stats)
 
-    await context.bot.send_message(
+    message = await context.bot.send_message(
         chat_id=update.effective_chat.id,
         text=text,
         reply_to_message_id=update.message.id
+    )
+
+    context.job_queue.run_once(
+        delete_message_task,
+        timedelta(seconds=30),
+        update.message.id,
+        chat_id=update.effective_chat.id
+    )
+
+    context.job_queue.run_once(
+        delete_message_task,
+        timedelta(seconds=30),
+        message.id,
+        chat_id=update.effective_chat.id
     )
 
 
