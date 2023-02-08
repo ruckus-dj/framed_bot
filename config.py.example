@@ -1,2 +1,3 @@
 BOT_TOKEN = 'TOKEN'
 DB_CONNECTION_STRING = 'postgresql+asyncpg://login:password@localhost:5432/test'
+ADMIN_USER_ID = 0

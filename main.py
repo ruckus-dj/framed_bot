@@ -14,9 +14,10 @@ from telegram.ext import (
 )
 from telegram.ext.filters import MessageFilter, Message
 
-from config import BOT_TOKEN
+from config import BOT_TOKEN, ADMIN_USER_ID
 from models import init_db, User, FramedResult
 from models.episode_result import EpisodeResult
+from models.group import Group
 from stats import count_stats, Stats
 
 logging.basicConfig(
@@ -174,6 +175,19 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def update_chat_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await Group.update_from_tg_chat(update.effective_chat)
+
+
+async def announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    groups = await Group.get_all()
+    for group in groups:
+        await context.bot.send_message(
+            chat_id=group.id,
+            text=update.effective_message.text.split(sep=' ', maxsplit=1)[1]
+        )
+
+
 if __name__ == '__main__':
     application = ApplicationBuilder().token(BOT_TOKEN).rate_limiter(AIORateLimiter()).build()
 
@@ -181,16 +195,27 @@ if __name__ == '__main__':
     coroutine = init_db()
     loop.run_until_complete(coroutine)
 
-    start_handler = CommandHandler('start', start)
+    start_handler = CommandHandler('start', start, block=False)
     application.add_handler(start_handler)
 
-    framed_data_handler = MessageHandler(filters.ChatType.GROUPS & FRAMED_FILTER, new_framed_data)
+    announce_handler = CommandHandler(
+        'announce',
+        announce,
+        filters.ChatType.PRIVATE & filters.User(ADMIN_USER_ID),
+        block=False
+    )
+    application.add_handler(announce_handler)
+
+    chat_update_handler = MessageHandler(filters.ChatType.GROUPS, update_chat_data, block=False)
+    application.add_handler(chat_update_handler, -1)
+
+    framed_data_handler = MessageHandler(filters.ChatType.GROUPS & FRAMED_FILTER, new_framed_data, block=False)
     application.add_handler(framed_data_handler)
 
-    episode_data_handler = MessageHandler(filters.ChatType.GROUPS & EPISODE_FILTER, new_episode_data)
+    episode_data_handler = MessageHandler(filters.ChatType.GROUPS & EPISODE_FILTER, new_episode_data, block=False)
     application.add_handler(episode_data_handler)
 
-    stats_handler = CommandHandler('stats', stats)
+    stats_handler = CommandHandler('stats', stats, block=False)
     application.add_handler(stats_handler)
 
     application.run_polling()
