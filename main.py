@@ -89,7 +89,7 @@ async def save_results(
             reply_to_message_id=update.message.id
         )
 
-    context.application.job_queue.run_once(
+    context.job_queue.run_once(
         delete_message_task,
         timedelta(seconds=30),
         message.id,
