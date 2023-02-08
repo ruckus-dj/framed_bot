@@ -1,9 +1,12 @@
 import asyncio
+import json
 import logging
 import re
 from datetime import timedelta
+from enum import IntEnum
 
-from telegram import Update
+from tabulate import tabulate
+from telegram import Update, MessageEntity, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
     ContextTypes,
@@ -11,6 +14,8 @@ from telegram.ext import (
     filters,
     MessageHandler,
     AIORateLimiter,
+    PicklePersistence,
+    CallbackQueryHandler
 )
 from telegram.ext.filters import MessageFilter, Message
 
@@ -27,6 +32,13 @@ logging.basicConfig(
 
 framed_pattern = r'Framed #(?P<round>[\d]+)\n🎥(?P<result>(?: 🟥| 🟩| ⬛| ⬛️){6})\n\nhttps:\/\/framed\.wtf'
 episode_pattern = r'Episode #(?P<round>[\d]+)\n📺(?P<result>(?: 🟥| 🟩| ⬛| ⬛️){10})\n\nhttps:\/\/episode\.wtf'
+
+
+class TopType(IntEnum):
+    TOP_SCORE = 1
+    TOP_FRAME = 2
+    TOP_WIN = 3
+    TOP_ROUNDS = 4
 
 
 class FramedFilter(MessageFilter):
@@ -188,8 +200,85 @@ async def announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+def top_reply_markup(top_type: TopType):
+    type_to_text = {
+        TopType.TOP_SCORE: 'По очкам',
+        TopType.TOP_ROUNDS: 'По участиям',
+        TopType.TOP_FRAME: 'По кадрам',
+        TopType.TOP_WIN: 'По фильмам',
+    }
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(type_to_text[_type], callback_data=json.dumps({'top': _type}))
+             for _type in type_to_text if _type != top_type]
+        ]
+    )
+
+
+async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    results = await FramedResult.top_score()
+    text = await format_top(TopType.TOP_SCORE, results)
+
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=text,
+        reply_to_message_id=update.message.id,
+        entities=[MessageEntity(MessageEntity.CODE, 0, len(text))],
+        reply_markup=top_reply_markup(TopType.TOP_SCORE)
+    )
+
+
+async def format_top(top_type, results) -> str:
+    match top_type:
+        case TopType.TOP_WIN:
+            text = 'Топ по количеству отгаданных фильмов:\n'
+        case TopType.TOP_FRAME:
+            text = 'Топ по среднему отгаданному кадру:\n'
+        case TopType.TOP_SCORE:
+            text = 'Топ по очкам:\n'
+        case TopType.TOP_ROUNDS:
+            text = 'Топ по количеству участий:\n'
+        case _:
+            text = ''
+    text += tabulate(
+        [(i, result.name, result.score) for i, result in enumerate(results, 1)],
+        ('#', 'Имя', 'Очки'),
+        tablefmt="rounded_grid"
+    )
+    return text
+
+
+async def inline_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    data = json.loads(query.data)
+    top_type = TopType(data['top'])
+    results = []
+    match top_type:
+        case TopType.TOP_WIN:
+            results = await FramedResult.top_won()
+        case TopType.TOP_FRAME:
+            results = await FramedResult.top_average_frame()
+        case TopType.TOP_SCORE:
+            results = await FramedResult.top_score()
+        case TopType.TOP_ROUNDS:
+            results = await FramedResult.top_rounds()
+
+    text = await format_top(top_type, results)
+    await query.message.edit_text(
+        text,
+        entities=[MessageEntity(MessageEntity.CODE, 0, len(text))],
+        reply_markup=top_reply_markup(top_type)
+    )
+
+    await query.answer()
+
+
 if __name__ == '__main__':
-    application = ApplicationBuilder().token(BOT_TOKEN).rate_limiter(AIORateLimiter()).build()
+    application = ApplicationBuilder()\
+        .token(BOT_TOKEN)\
+        .rate_limiter(AIORateLimiter())\
+        .persistence(PicklePersistence('bot_data'))\
+        .build()
 
     loop = asyncio.get_event_loop()
     coroutine = init_db()
@@ -217,5 +306,11 @@ if __name__ == '__main__':
 
     stats_handler = CommandHandler('stats', stats, block=False)
     application.add_handler(stats_handler)
+
+    top_handler = CommandHandler('top', top, block=False)
+    application.add_handler(top_handler)
+
+    inline_top_handler = CallbackQueryHandler(inline_top, pattern=r'^{"top": [\d]+}$', block=False)
+    application.add_handler(inline_top_handler)
 
     application.run_polling()
