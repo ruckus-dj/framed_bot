@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import re
+from datetime import timedelta
 
 from telegram import Update
 from telegram.ext import (
@@ -43,6 +44,10 @@ class EpisodeFilter(MessageFilter):
 EPISODE_FILTER = EpisodeFilter(name='EpisodeFilter')
 
 
+async def delete_message_task(context: ContextTypes.DEFAULT_TYPE):
+    await context.bot.delete_message(context.job.chat_id, context.job.data)
+
+
 def pluralize(count: int, first_form: str, second_form: str, third_form: str):
     if count % 10 == 1 and count != 11:
         return first_form
@@ -72,17 +77,24 @@ async def save_results(
     saved = await result_class.save_result(update.effective_user.id, data_round, data_won, data_win_frame)
 
     if saved:
-        await context.bot.send_message(
+        message = await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text='Спасибо, записал',
             reply_to_message_id=update.message.id
         )
     else:
-        await context.bot.send_message(
+        message = await context.bot.send_message(
             chat_id=update.effective_chat.id,
             text='Твои результаты на этот раунд у меня уже есть',
             reply_to_message_id=update.message.id
         )
+
+    context.application.job_queue.run_once(
+        delete_message_task,
+        timedelta(seconds=30),
+        message.id,
+        chat_id=update.effective_chat.id
+    )
 
 
 async def new_framed_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
