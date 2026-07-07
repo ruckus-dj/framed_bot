@@ -1,0 +1,36 @@
+[project]
+name = "framed-bot"
+version = "0.1.0"
+description = "Telegram bot for tracking Framed game results"
+requires-python = ">=3.14"
+dependencies = [
+    "asyncpg>=0.31.0",
+    "python-telegram-bot[job-queue,rate-limiter]>=22.5",
+    "sqlalchemy[asyncio]>=2.0.45",
+    "tabulate>=0.9.0",
+]
+
+[dependency-groups]
+dev = [
+    "ty>=0.0.18",
+]
+
+[tool.uv]
+package = false
+
+[tool.ty.environment]
+python-version = "3.14"
+
+[tool.ty.src]
+exclude = ["**/__pycache__", "**/.venv", "**/.git", "**/.codegraph"]
+
+[tool.ruff]
+target-version = "py314"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.ruff.format]
+quote-style = "single"
+indent-style = "space"
