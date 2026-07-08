@@ -1,30 +1,30 @@
 from __future__ import annotations
 
-from typing import Optional
-
 from sqlalchemy import ForeignKey, Select
-from sqlalchemy.orm import Mapped, relationship
-from sqlalchemy.orm import mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .db import Base, AsyncScopedSession
+from .db import AsyncScopedSession, Base
 
 
 class EpisodeResult(Base):
-    __tablename__ = "episode_result"
+    __tablename__ = 'episode_result'
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey('user.id'), index=True)
     framed_round: Mapped[int] = mapped_column(index=True)
-    won: Mapped[bool]
-    win_frame: Mapped[Optional[int]]
+    won: Mapped[bool] = mapped_column()
+    win_frame: Mapped[int | None] = mapped_column()
 
-    user: Mapped['User'] = relationship(back_populates='episode_results')
+    user: Mapped[Base] = relationship('User', back_populates='episode_results')
 
     @staticmethod
-    async def save_result(user_id: int, framed_round: int, won: bool, win_frame: Optional[int]) -> bool:
+    async def save_result(user_id: int, framed_round: int, won: bool, win_frame: int | None) -> bool:
         async with AsyncScopedSession() as session:
-            result = await session.execute(Select(EpisodeResult).filter(EpisodeResult.user_id == user_id,
-                                                                        EpisodeResult.framed_round == framed_round))
+            result = await session.execute(
+                Select(EpisodeResult).filter(
+                    EpisodeResult.user_id == user_id, EpisodeResult.framed_round == framed_round
+                )
+            )
             framed_result = result.first()
             if framed_result:
                 return False
