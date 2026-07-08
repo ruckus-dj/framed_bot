@@ -10,10 +10,12 @@ from tabulate import tabulate
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    Message as TelegramMessage,
     MessageEntity,
     ReactionTypeEmoji,
     Update,
+)
+from telegram import (
+    Message as TelegramMessage,
 )
 from telegram.constants import ReactionEmoji
 from telegram.error import TelegramError
@@ -73,11 +75,12 @@ class ResultSaver(Protocol):
 
 async def delete_message_task(context: ContextTypes.DEFAULT_TYPE):
     job = context.job
-    assert job is not None
+    if job is None:
+        return
     chat_id = job.chat_id
     message_id = job.data
-    assert chat_id is not None
-    assert isinstance(message_id, int)
+    if chat_id is None or not isinstance(message_id, int):
+        return
     await context.bot.delete_message(chat_id, message_id)
 
 
@@ -91,7 +94,8 @@ def pluralize(count: int, first_form: str, second_form: str, third_form: str):
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
-    assert chat is not None
+    if chat is None:
+        return
     await context.bot.send_message(chat_id=chat.id, text='Привет')
 
 
@@ -104,14 +108,13 @@ async def save_results(
     effective_user = update.effective_user
     effective_chat = update.effective_chat
     message = update.message
-    assert effective_user is not None
-    assert effective_chat is not None
-    assert message is not None
-    assert message.text is not None
+    if effective_user is None or effective_chat is None or message is None or message.text is None:
+        return
 
     await User.update_from_tg_user(effective_user)
     result = re.search(pattern, message.text)
-    assert result is not None
+    if result is None:
+        return
 
     data_round = int(result.groupdict()['round'])
     data_result = result.groupdict()['result']
@@ -122,9 +125,6 @@ async def save_results(
 
     reaction = saved_result_reaction if saved else duplicate_result_reaction
 
-    job_queue = context.job_queue
-    assert job_queue is not None
-
     try:
         await context.bot.set_message_reaction(
             chat_id=effective_chat.id,
@@ -134,6 +134,8 @@ async def save_results(
         return
     except TelegramError:
         logging.warning('Не удалось проставить реакцию, откатываюсь к сообщению-ответу', exc_info=True)
+
+    job_queue = context.job_queue
 
     if saved:
         reply_message = await context.bot.send_message(
@@ -148,7 +150,8 @@ async def save_results(
             reply_to_message_id=message.id,
         )
 
-    job_queue.run_once(delete_message_task, timedelta(seconds=30), reply_message.id, chat_id=effective_chat.id)
+    if job_queue is not None:
+        job_queue.run_once(delete_message_task, timedelta(seconds=30), reply_message.id, chat_id=effective_chat.id)
 
 
 async def new_framed_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -202,9 +205,8 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     effective_user = update.effective_user
     effective_chat = update.effective_chat
     message = update.message
-    assert effective_user is not None
-    assert effective_chat is not None
-    assert message is not None
+    if effective_user is None or effective_chat is None or message is None:
+        return
 
     user = await User.get(effective_user.id)
 
@@ -220,7 +222,8 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_message = await context.bot.send_message(chat_id=effective_chat.id, text=text, reply_to_message_id=message.id)
 
     job_queue = context.job_queue
-    assert job_queue is not None
+    if job_queue is None:
+        return
 
     job_queue.run_once(delete_message_task, timedelta(seconds=30), message.id, chat_id=effective_chat.id)
 
@@ -229,17 +232,21 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def update_chat_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
     effective_chat = update.effective_chat
-    assert effective_chat is not None
+    if effective_chat is None:
+        return
     await Group.update_from_tg_chat(effective_chat)
 
 
 async def announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    groups = await Group.get_all()
     effective_message = update.effective_message
-    assert effective_message is not None
-    assert effective_message.text is not None
+    if effective_message is None or effective_message.text is None:
+        return
+    _, _, announcement_text = effective_message.text.partition(' ')
+    if not announcement_text:
+        return
+    groups = await Group.get_all()
     for group in groups:
-        await context.bot.send_message(chat_id=group.id, text=effective_message.text.split(sep=' ', maxsplit=1)[1])
+        await context.bot.send_message(chat_id=group.id, text=announcement_text)
 
 
 def top_reply_markup(top_type: TopType):
@@ -263,8 +270,8 @@ def top_reply_markup(top_type: TopType):
 async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     effective_chat = update.effective_chat
     message = update.message
-    assert effective_chat is not None
-    assert message is not None
+    if effective_chat is None or message is None:
+        return
     results = await FramedResult.top_score()
     text = await format_top(TopType.TOP_SCORE, results)
 
@@ -299,8 +306,8 @@ async def format_top(top_type, results) -> str:
 
 async def inline_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    assert query is not None
-    assert query.data is not None
+    if query is None or query.data is None:
+        return
     data = json.loads(query.data)
     top_type = TopType(data['top'])
     results = []
@@ -316,8 +323,9 @@ async def inline_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = await format_top(top_type, results)
     query_message = query.message
-    assert query_message is not None
-    assert isinstance(query_message, TelegramMessage)
+    if not isinstance(query_message, TelegramMessage):
+        await query.answer()
+        return
     await query_message.edit_text(
         text,
         entities=[MessageEntity(MessageEntity.CODE, 0, len(text))],
