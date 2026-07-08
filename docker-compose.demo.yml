@@ -1,0 +1,18 @@
+services:
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: framed
+      POSTGRES_USER: framed
+      POSTGRES_PASSWORD: framed
+
+  bot:
+    image: ghcr.io/ruckus-dj/framed_bot:latest
+    restart: unless-stopped
+    depends_on:
+      - db
+    environment:
+      BOT_TOKEN: ${BOT_TOKEN:?BOT_TOKEN is required}
+      DB_CONNECTION_STRING: postgresql+asyncpg://framed:framed@db:5432/framed
+      ADMIN_USER_ID: ${ADMIN_USER_ID:?ADMIN_USER_ID is required}
