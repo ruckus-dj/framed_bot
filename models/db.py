@@ -1,7 +1,7 @@
 from asyncio import current_task
 from typing import Protocol
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_scoped_session, async_sessionmaker
+from sqlalchemy.ext.asyncio import async_scoped_session, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from config import DB_CONNECTION_STRING

@@ -2,6 +2,7 @@ from .db import Base, engine
 from .framed_result import FramedResult
 from .user import User
 
+__all__ = ["FramedResult", "User"]
 
 async def init_db():
     async with engine.begin() as conn:

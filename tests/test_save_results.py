@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 import pytest
@@ -58,7 +58,7 @@ class BotRecorder:
         chat = Chat(id=chat_id, type='group')
         return Message(
             message_id=777,
-            date=datetime.now(timezone.utc),
+            date=datetime.now(UTC),
             chat=chat,
             from_user=user,
             text=text,
@@ -94,7 +94,7 @@ def make_update(text: str = 'Framed #42\n🎥 🟥 🟩 ⬛ ⬛ ⬛ ⬛\n\nhttps
     chat = Chat(id=123, type='group')
     message = Message(
         message_id=456,
-        date=datetime.now(timezone.utc),
+        date=datetime.now(UTC),
         chat=chat,
         from_user=user,
         text=text,
