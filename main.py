@@ -4,34 +4,43 @@ import logging
 import re
 from datetime import timedelta
 from enum import IntEnum
+from typing import Protocol
 
 from tabulate import tabulate
-from telegram import Update, MessageEntity, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.ext import (
-    ApplicationBuilder,
-    ContextTypes,
-    CommandHandler,
-    filters,
-    MessageHandler,
-    AIORateLimiter,
-    PicklePersistence,
-    CallbackQueryHandler
+from telegram import (
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    Message as TelegramMessage,
+    MessageEntity,
+    ReactionTypeEmoji,
+    Update,
 )
-from telegram.ext.filters import MessageFilter, Message
+from telegram.constants import ReactionEmoji
+from telegram.error import TelegramError
+from telegram.ext import (
+    AIORateLimiter,
+    ApplicationBuilder,
+    CallbackQueryHandler,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    PicklePersistence,
+    filters,
+)
+from telegram.ext.filters import Message, MessageFilter
 
-from config import BOT_TOKEN, ADMIN_USER_ID
-from models import init_db, User, FramedResult
+from config import ADMIN_USER_ID, BOT_TOKEN
+from models import FramedResult, User, init_db
 from models.episode_result import EpisodeResult
 from models.group import Group
-from stats import count_stats, Stats
+from stats import Stats, count_stats
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 framed_pattern = r'Framed #(?P<round>[\d]+)\n🎥(?P<result>(?: 🟥| 🟩| ⬛| ⬛️){6})\n\nhttps:\/\/framed\.wtf'
 episode_pattern = r'Episode #(?P<round>[\d]+)\n📺(?P<result>(?: 🟥| 🟩| ⬛| ⬛️){10})\n\nhttps:\/\/episode\.wtf'
+saved_result_reaction = ReactionTypeEmoji(ReactionEmoji.THUMBS_UP)
+duplicate_result_reaction = ReactionTypeEmoji(ReactionEmoji.THUMBS_DOWN)
 
 
 class TopType(IntEnum):
@@ -43,7 +52,7 @@ class TopType(IntEnum):
 
 class FramedFilter(MessageFilter):
     def filter(self, message: Message):
-        return re.search(framed_pattern, message.text) is not None
+        return message.text is not None and re.search(framed_pattern, message.text) is not None
 
 
 FRAMED_FILTER = FramedFilter(name='FramedFilter')
@@ -51,14 +60,25 @@ FRAMED_FILTER = FramedFilter(name='FramedFilter')
 
 class EpisodeFilter(MessageFilter):
     def filter(self, message: Message):
-        return re.search(episode_pattern, message.text) is not None
+        return message.text is not None and re.search(episode_pattern, message.text) is not None
 
 
 EPISODE_FILTER = EpisodeFilter(name='EpisodeFilter')
 
 
+class ResultSaver(Protocol):
+    @staticmethod
+    async def save_result(user_id: int, framed_round: int, won: bool, win_frame: int | None) -> bool: ...
+
+
 async def delete_message_task(context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.delete_message(context.job.chat_id, context.job.data)
+    job = context.job
+    assert job is not None
+    chat_id = job.chat_id
+    message_id = job.data
+    assert chat_id is not None
+    assert isinstance(message_id, int)
+    await context.bot.delete_message(chat_id, message_id)
 
 
 def pluralize(count: int, first_form: str, second_form: str, third_form: str):
@@ -70,44 +90,65 @@ def pluralize(count: int, first_form: str, second_form: str, third_form: str):
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await context.bot.send_message(chat_id=update.effective_chat.id, text='Привет')
+    chat = update.effective_chat
+    assert chat is not None
+    await context.bot.send_message(chat_id=chat.id, text='Привет')
 
 
 async def save_results(
-        update: Update,
-        context: ContextTypes.DEFAULT_TYPE,
-        pattern: str,
-        result_class: type[FramedResult] | type[EpisodeResult],
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    pattern: str,
+    result_class: type[ResultSaver],
 ):
-    await User.update_from_tg_user(update.effective_user)
-    result = re.search(pattern, update.message.text)
+    effective_user = update.effective_user
+    effective_chat = update.effective_chat
+    message = update.message
+    assert effective_user is not None
+    assert effective_chat is not None
+    assert message is not None
+    assert message.text is not None
+
+    await User.update_from_tg_user(effective_user)
+    result = re.search(pattern, message.text)
+    assert result is not None
 
     data_round = int(result.groupdict()['round'])
     data_result = result.groupdict()['result']
     data_won = '🟩' in data_result
     data_win_frame = data_result.count('🟥') + 1 if data_won else None
 
-    saved = await result_class.save_result(update.effective_user.id, data_round, data_won, data_win_frame)
+    saved = await result_class.save_result(effective_user.id, data_round, data_won, data_win_frame)
+
+    reaction = saved_result_reaction if saved else duplicate_result_reaction
+
+    job_queue = context.job_queue
+    assert job_queue is not None
+
+    try:
+        await context.bot.set_message_reaction(
+            chat_id=effective_chat.id,
+            message_id=message.id,
+            reaction=reaction,
+        )
+        return
+    except TelegramError:
+        logging.warning('Не удалось проставить реакцию, откатываюсь к сообщению-ответу', exc_info=True)
 
     if saved:
-        message = await context.bot.send_message(
-            chat_id=update.effective_chat.id,
+        reply_message = await context.bot.send_message(
+            chat_id=effective_chat.id,
             text='Спасибо, записал',
-            reply_to_message_id=update.message.id
+            reply_to_message_id=message.id,
         )
     else:
-        message = await context.bot.send_message(
-            chat_id=update.effective_chat.id,
+        reply_message = await context.bot.send_message(
+            chat_id=effective_chat.id,
             text='Твои результаты на этот раунд у меня уже есть',
-            reply_to_message_id=update.message.id
+            reply_to_message_id=message.id,
         )
 
-    context.job_queue.run_once(
-        delete_message_task,
-        timedelta(seconds=30),
-        message.id,
-        chat_id=update.effective_chat.id
-    )
+    job_queue.run_once(delete_message_task, timedelta(seconds=30), reply_message.id, chat_id=effective_chat.id)
 
 
 async def new_framed_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -119,46 +160,56 @@ async def new_episode_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def generate_stats_text(framed_stats: Stats, episode_stats: Stats):
-    text = f'Ты участвовал в '
+    text = 'Ты участвовал в '
     if framed_stats.rounds_count:
-        text += f'{framed_stats.rounds_count} ' \
-                f'{pluralize(framed_stats.rounds_count, "раунде", "раундах", "раундах")} ' \
-                f'framed.wtf, ' \
-
+        text += (
+            f'{framed_stats.rounds_count} '
+            f'{pluralize(framed_stats.rounds_count, "раунде", "раундах", "раундах")} '
+            f'framed.wtf, '
+        )
         if framed_stats.rounds_won_count:
-            text += f'отгадал {framed_stats.rounds_won_count} ' \
-                    f'{pluralize(framed_stats.rounds_won_count, "фильм", "фильма", "фильмов")} ' \
-                    f'в среднем с {framed_stats.average_frame} кадра.'
+            text += (
+                f'отгадал {framed_stats.rounds_won_count} '
+                f'{pluralize(framed_stats.rounds_won_count, "фильм", "фильма", "фильмов")} '
+                f'в среднем с {framed_stats.average_frame} кадра.'
+            )
         else:
-            text += f'но ни разу ничего не отгадал.'
+            text += 'но ни разу ничего не отгадал.'
 
     if framed_stats.rounds_count and episode_stats.rounds_count:
         text += '\nА ещё в '
 
     if episode_stats.rounds_count:
-        text += f'{episode_stats.rounds_count} ' \
-                f'{pluralize(episode_stats.rounds_count, "раунде", "раундах", "раундах")} ' \
-                f'episode.wtf, '
+        text += (
+            f'{episode_stats.rounds_count} '
+            f'{pluralize(episode_stats.rounds_count, "раунде", "раундах", "раундах")} '
+            f'episode.wtf, '
+        )
 
         if episode_stats.rounds_won_count:
-            text += f'отгадал {episode_stats.rounds_won_count} ' \
-                    f'{pluralize(episode_stats.rounds_won_count, "сериал", "сериала", "сериалов")} ' \
-                    f'в среднем с {episode_stats.average_frame} кадра.'
+            text += (
+                f'отгадал {episode_stats.rounds_won_count} '
+                f'{pluralize(episode_stats.rounds_won_count, "сериал", "сериала", "сериалов")} '
+                f'в среднем с {episode_stats.average_frame} кадра.'
+            )
         else:
-            text += f'но ни разу ничего не отгадал.'
+            text += 'но ни разу ничего не отгадал.'
 
     return text
 
 
 async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user = await User.get(update.effective_user.id)
+    effective_user = update.effective_user
+    effective_chat = update.effective_chat
+    message = update.message
+    assert effective_user is not None
+    assert effective_chat is not None
+    assert message is not None
+
+    user = await User.get(effective_user.id)
 
     if not user:
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text='Я тебя не знаю',
-            reply_to_message_id=update.message.id
-        )
+        await context.bot.send_message(chat_id=effective_chat.id, text='Я тебя не знаю', reply_to_message_id=message.id)
         return
 
     framed_stats = await count_stats(user.framed_results)
@@ -166,38 +217,29 @@ async def stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     text = await generate_stats_text(framed_stats, episode_stats)
 
-    message = await context.bot.send_message(
-        chat_id=update.effective_chat.id,
-        text=text,
-        reply_to_message_id=update.message.id
-    )
+    reply_message = await context.bot.send_message(chat_id=effective_chat.id, text=text, reply_to_message_id=message.id)
 
-    context.job_queue.run_once(
-        delete_message_task,
-        timedelta(seconds=30),
-        update.message.id,
-        chat_id=update.effective_chat.id
-    )
+    job_queue = context.job_queue
+    assert job_queue is not None
 
-    context.job_queue.run_once(
-        delete_message_task,
-        timedelta(seconds=30),
-        message.id,
-        chat_id=update.effective_chat.id
-    )
+    job_queue.run_once(delete_message_task, timedelta(seconds=30), message.id, chat_id=effective_chat.id)
+
+    job_queue.run_once(delete_message_task, timedelta(seconds=30), reply_message.id, chat_id=effective_chat.id)
 
 
 async def update_chat_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await Group.update_from_tg_chat(update.effective_chat)
+    effective_chat = update.effective_chat
+    assert effective_chat is not None
+    await Group.update_from_tg_chat(effective_chat)
 
 
 async def announce(update: Update, context: ContextTypes.DEFAULT_TYPE):
     groups = await Group.get_all()
+    effective_message = update.effective_message
+    assert effective_message is not None
+    assert effective_message.text is not None
     for group in groups:
-        await context.bot.send_message(
-            chat_id=group.id,
-            text=update.effective_message.text.split(sep=' ', maxsplit=1)[1]
-        )
+        await context.bot.send_message(chat_id=group.id, text=effective_message.text.split(sep=' ', maxsplit=1)[1])
 
 
 def top_reply_markup(top_type: TopType):
@@ -209,22 +251,29 @@ def top_reply_markup(top_type: TopType):
     }
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(type_to_text[_type], callback_data=json.dumps({'top': _type}))
-             for _type in type_to_text if _type != top_type]
+            [
+                InlineKeyboardButton(type_to_text[_type], callback_data=json.dumps({'top': _type}))
+                for _type in type_to_text
+                if _type != top_type
+            ]
         ]
     )
 
 
 async def top(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    effective_chat = update.effective_chat
+    message = update.message
+    assert effective_chat is not None
+    assert message is not None
     results = await FramedResult.top_score()
     text = await format_top(TopType.TOP_SCORE, results)
 
     await context.bot.send_message(
-        chat_id=update.effective_chat.id,
+        chat_id=effective_chat.id,
         text=text,
-        reply_to_message_id=update.message.id,
+        reply_to_message_id=message.id,
         entities=[MessageEntity(MessageEntity.CODE, 0, len(text))],
-        reply_markup=top_reply_markup(TopType.TOP_SCORE)
+        reply_markup=top_reply_markup(TopType.TOP_SCORE),
     )
 
 
@@ -243,13 +292,15 @@ async def format_top(top_type, results) -> str:
     text += tabulate(
         [(i, result.name, result.score) for i, result in enumerate(results, 1)],
         ('#', 'Имя', 'Очки'),
-        tablefmt="rounded_grid"
+        tablefmt='rounded_grid',
     )
     return text
 
 
 async def inline_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
+    assert query is not None
+    assert query.data is not None
     data = json.loads(query.data)
     top_type = TopType(data['top'])
     results = []
@@ -264,21 +315,26 @@ async def inline_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
             results = await FramedResult.top_rounds()
 
     text = await format_top(top_type, results)
-    await query.message.edit_text(
+    query_message = query.message
+    assert query_message is not None
+    assert isinstance(query_message, TelegramMessage)
+    await query_message.edit_text(
         text,
         entities=[MessageEntity(MessageEntity.CODE, 0, len(text))],
-        reply_markup=top_reply_markup(top_type)
+        reply_markup=top_reply_markup(top_type),
     )
 
     await query.answer()
 
 
 if __name__ == '__main__':
-    application = ApplicationBuilder()\
-        .token(BOT_TOKEN)\
-        .rate_limiter(AIORateLimiter())\
-        .persistence(PicklePersistence('bot_data'))\
+    application = (
+        ApplicationBuilder()
+        .token(BOT_TOKEN)
+        .rate_limiter(AIORateLimiter())
+        .persistence(PicklePersistence('bot_data'))
         .build()
+    )
 
     loop = asyncio.get_event_loop()
     coroutine = init_db()
@@ -288,10 +344,7 @@ if __name__ == '__main__':
     application.add_handler(start_handler)
 
     announce_handler = CommandHandler(
-        'announce',
-        announce,
-        filters.ChatType.PRIVATE & filters.User(ADMIN_USER_ID),
-        block=False
+        'announce', announce, filters.ChatType.PRIVATE & filters.User(ADMIN_USER_ID), block=False
     )
     application.add_handler(announce_handler)
 
