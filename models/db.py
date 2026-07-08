@@ -1,4 +1,5 @@
 from asyncio import current_task
+from typing import Protocol
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_scoped_session, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
@@ -24,3 +25,8 @@ AsyncScopedSession = async_scoped_session(
 
 class Base(DeclarativeBase):
     pass
+
+
+class ResultForStats(Protocol):
+    won: bool
+    win_frame: int | None
