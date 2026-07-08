@@ -6,6 +6,8 @@ services:
       POSTGRES_DB: framed
       POSTGRES_USER: framed
       POSTGRES_PASSWORD: framed
+    volumes:
+      - db_data:/var/lib/postgresql
 
   bot:
     image: ghcr.io/ruckus-dj/framed_bot:latest
@@ -16,3 +18,6 @@ services:
       BOT_TOKEN: ${BOT_TOKEN:?BOT_TOKEN is required}
       DB_CONNECTION_STRING: postgresql+asyncpg://framed:framed@db:5432/framed
       ADMIN_USER_ID: ${ADMIN_USER_ID:?ADMIN_USER_ID is required}
+
+volumes:
+  db_data:

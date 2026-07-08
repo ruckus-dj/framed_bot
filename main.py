@@ -344,9 +344,7 @@ if __name__ == '__main__':
         .build()
     )
 
-    loop = asyncio.get_event_loop()
-    coroutine = init_db()
-    loop.run_until_complete(coroutine)
+    asyncio.run(init_db())
 
     start_handler = CommandHandler('start', start, block=False)
     application.add_handler(start_handler)
