@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 import re
@@ -21,10 +20,13 @@ from telegram.constants import ReactionEmoji
 from telegram.error import TelegramError
 from telegram.ext import (
     AIORateLimiter,
+    Application,
     ApplicationBuilder,
     CallbackQueryHandler,
     CommandHandler,
     ContextTypes,
+    ExtBot,
+    JobQueue,
     MessageHandler,
     PicklePersistence,
     filters,
@@ -335,16 +337,28 @@ async def inline_top(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.answer()
 
 
+async def initialize_database(
+    _application: Application[
+        ExtBot[None],
+        ContextTypes.DEFAULT_TYPE,
+        dict[str, str],
+        dict[str, str],
+        dict[str, str],
+        JobQueue[ContextTypes.DEFAULT_TYPE],
+    ],
+) -> None:
+    await init_db()
+
+
 if __name__ == '__main__':
     application = (
         ApplicationBuilder()
         .token(BOT_TOKEN)
         .rate_limiter(AIORateLimiter())
         .persistence(PicklePersistence('bot_data'))
+        .post_init(initialize_database)
         .build()
     )
-
-    asyncio.run(init_db())
 
     start_handler = CommandHandler('start', start, block=False)
     application.add_handler(start_handler)
