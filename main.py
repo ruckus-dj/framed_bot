@@ -44,7 +44,12 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 framed_pattern = r'Framed #(?P<round>[\d]+)\n🎥(?P<result>(?: 🟥| 🟩| ⬛| ⬛️){6})\n\nhttps:\/\/framed\.wtf'
 episode_pattern = r'Episode #(?P<round>[\d]+)\n📺(?P<result>(?: 🟥| 🟩| ⬛| ⬛️){10})\n\nhttps:\/\/episode\.wtf'
 saved_result_reaction = ReactionTypeEmoji(ReactionEmoji.THUMBS_UP)
+first_frame_saved_result_reaction = ReactionTypeEmoji(ReactionEmoji.TROPHY)
 duplicate_result_reaction = ReactionTypeEmoji(ReactionEmoji.THUMBS_DOWN)
+
+
+def saved_reaction_for(win_frame: int | None) -> ReactionTypeEmoji:
+    return first_frame_saved_result_reaction if win_frame == 1 else saved_result_reaction
 
 
 class TopType(IntEnum):
@@ -125,7 +130,7 @@ async def save_results(
 
     saved = await result_class.save_result(effective_user.id, data_round, data_won, data_win_frame)
 
-    reaction = saved_result_reaction if saved else duplicate_result_reaction
+    reaction = saved_reaction_for(data_win_frame) if saved else duplicate_result_reaction
 
     try:
         await context.bot.set_message_reaction(

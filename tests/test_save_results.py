@@ -165,6 +165,26 @@ async def test_save_results_uses_saved_reaction_when_saved(monkeypatch: pytest.M
 
 
 @pytest.mark.asyncio
+async def test_save_results_uses_trophy_reaction_when_saved_on_first_frame(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    update = make_update('Framed #42\n🎥 🟩 ⬛ ⬛ ⬛ ⬛ ⬛\n\nhttps://framed.wtf')
+    test_context = make_context(monkeypatch)
+    result_model = make_result_model(True)
+    update_from_user = AsyncMock()
+    monkeypatch.setattr(BotUser, 'update_from_tg_user', update_from_user)
+
+    await main.save_results(update, test_context.context, main.framed_pattern, result_model)
+
+    assert result_model.calls == [(99, 42, True, 1)]
+    assert test_context.bot.reaction_calls == [
+        ReactionCall(chat_id=123, message_id=456, reaction=main.first_frame_saved_result_reaction)
+    ]
+    assert test_context.bot.send_message_calls == []
+    assert test_context.job_queue.calls == []
+
+
+@pytest.mark.asyncio
 async def test_save_results_uses_duplicate_reaction_when_duplicate(monkeypatch: pytest.MonkeyPatch) -> None:
     update = make_update()
     test_context = make_context(monkeypatch)
