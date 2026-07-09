@@ -1,7 +1,6 @@
-from asyncio import current_task
 from typing import Protocol
 
-from sqlalchemy.ext.asyncio import async_scoped_session, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from config import DB_CONNECTION_STRING
@@ -17,10 +16,7 @@ async_session_factory = async_sessionmaker(
     engine,
     expire_on_commit=False,
 )
-AsyncScopedSession = async_scoped_session(
-    async_session_factory,
-    scopefunc=current_task,
-)
+AsyncScopedSession = async_session_factory
 
 
 class Base(DeclarativeBase):
